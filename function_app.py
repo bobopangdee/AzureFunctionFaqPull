@@ -2,7 +2,6 @@ import azure.functions as func
 import json
 import logging
 import os
-from functools import lru_cache
 
 import requests
 from azure.identity import DefaultAzureCredential
@@ -20,6 +19,12 @@ SEARCH_SERVICE_NAME = os.environ["SEARCH_SERVICE_NAME"]
 SEARCH_INDEXER_NAME = os.environ["SEARCH_INDEXER_NAME"]
 SEARCH_API_KEY = os.environ["SEARCH_API_KEY"]
 SEARCH_API_VERSION = os.environ.get("SEARCH_API_VERSION", "2024-07-01")
+
+_CREDENTIAL = DefaultAzureCredential()
+_BLOB_SERVICE = BlobServiceClient(
+    account_url=f"https://{STORAGE_ACCOUNT}.blob.core.windows.net",
+    credential=_CREDENTIAL,
+)
 
 
 def strip_img_src(raw_json: dict) -> dict:
@@ -53,14 +58,8 @@ def fetch_and_transform() -> dict:
     return strip_img_src(raw)
 
 
-@lru_cache(maxsize=1)
 def get_blob_client():
-    credential = DefaultAzureCredential()
-    blob_service = BlobServiceClient(
-        account_url=f"https://{STORAGE_ACCOUNT}.blob.core.windows.net",
-        credential=credential,
-    )
-    return blob_service.get_blob_client(container=CONTAINER_NAME, blob=BLOB_NAME)
+    return _BLOB_SERVICE.get_blob_client(container=CONTAINER_NAME, blob=BLOB_NAME)
 
 
 def upload_to_blob(data: dict) -> None:
@@ -89,7 +88,8 @@ def trigger_search_reindex() -> None:
         logging.info("AI Search indexer run triggered successfully.")
     else:
         logging.error(
-            "Failed to trigger indexer. Status: %s, Body: %s",
+            "Failed to trigger indexer '%s'. Status: %s, Body: %s",
+            SEARCH_INDEXER_NAME,
             response.status_code,
             response.text,
         )

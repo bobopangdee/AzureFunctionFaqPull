@@ -43,10 +43,12 @@ def fetch_and_transform() -> dict:
     try:
         response = requests.get(API_ENDPOINT, timeout=30)
         response.raise_for_status()
-        raw = response.json()
     except requests.RequestException:
         logging.exception("Failed to fetch content from API endpoint: %s", API_ENDPOINT)
         raise
+
+    try:
+        raw = response.json()
     except ValueError:
         logging.exception(
             "API endpoint returned invalid JSON: %s (status=%s)",

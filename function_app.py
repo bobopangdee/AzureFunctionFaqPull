@@ -46,7 +46,7 @@ def fetch_and_transform() -> dict:
         logging.exception(
             "API endpoint returned invalid JSON: %s (status=%s)",
             API_ENDPOINT,
-            response.status_code if "response" in locals() else "unknown",
+            response.status_code,
         )
         raise
     logging.info("Transforming content...")

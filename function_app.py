@@ -2,6 +2,7 @@ import azure.functions as func
 import json
 import logging
 import os
+from functools import lru_cache
 
 import requests
 from azure.identity import DefaultAzureCredential
@@ -34,20 +35,36 @@ def strip_img_src(raw_json: dict) -> dict:
 
 def fetch_and_transform() -> dict:
     logging.info("Fetching raw content from API...")
-    response = requests.get(API_ENDPOINT, timeout=30)
-    response.raise_for_status()
-    raw = response.json()
+    try:
+        response = requests.get(API_ENDPOINT, timeout=30)
+        response.raise_for_status()
+        raw = response.json()
+    except requests.RequestException:
+        logging.exception("Failed to fetch content from API endpoint: %s", API_ENDPOINT)
+        raise
+    except ValueError:
+        logging.exception(
+            "API endpoint returned invalid JSON: %s (status=%s)",
+            API_ENDPOINT,
+            response.status_code if "response" in locals() else "unknown",
+        )
+        raise
     logging.info("Transforming content...")
     return strip_img_src(raw)
 
 
-def upload_to_blob(data: dict) -> None:
+@lru_cache(maxsize=1)
+def get_blob_client():
     credential = DefaultAzureCredential()
     blob_service = BlobServiceClient(
         account_url=f"https://{STORAGE_ACCOUNT}.blob.core.windows.net",
         credential=credential,
     )
-    blob_client = blob_service.get_blob_client(container=CONTAINER_NAME, blob=BLOB_NAME)
+    return blob_service.get_blob_client(container=CONTAINER_NAME, blob=BLOB_NAME)
+
+
+def upload_to_blob(data: dict) -> None:
+    blob_client = get_blob_client()
     blob_client.upload_blob(
         json.dumps(data, ensure_ascii=False, indent=2),
         overwrite=True,
@@ -88,8 +105,12 @@ def run_pipeline() -> None:
 @app.timer_trigger(schedule="0 0 2 * * *", arg_name="timer", run_on_startup=False)
 def scheduled_process(timer: func.TimerRequest) -> None:
     logging.info("Scheduled pipeline run started.")
-    run_pipeline()
-    logging.info("Scheduled pipeline run completed.")
+    try:
+        run_pipeline()
+        logging.info("Scheduled pipeline run completed.")
+    except Exception:
+        logging.exception("Scheduled pipeline failed")
+        raise
 
 
 @app.route(route="process", auth_level=func.AuthLevel.FUNCTION)

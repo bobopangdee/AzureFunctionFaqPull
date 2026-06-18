@@ -49,7 +49,7 @@ def fetch_and_transform() -> dict:
 
     try:
         raw = response.json()
-    except ValueError:
+    except requests.exceptions.JSONDecodeError:
         logging.exception(
             "API endpoint returned invalid JSON: %s (status=%s)",
             API_ENDPOINT,
@@ -84,7 +84,14 @@ def trigger_search_reindex() -> None:
         "Content-Type": "application/json",
         "api-key": SEARCH_API_KEY,
     }
-    response = requests.post(url, headers=headers, timeout=30)
+    try:
+        response = requests.post(url, headers=headers, timeout=30)
+    except requests.RequestException:
+        logging.exception(
+            "Failed to call AI Search indexer run API for '%s'",
+            SEARCH_INDEXER_NAME,
+        )
+        raise
 
     if response.status_code == 202:
         logging.info("AI Search indexer run triggered successfully.")
